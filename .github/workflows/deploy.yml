@@ -57,6 +57,17 @@ jobs:
       - name: Install dependencies
         run: yarn install --immutable
 
+      - name: Verify deployment secret
+        env:
+          DEPLOY_VERIFICATION_TOKEN: ${{ secrets.DEPLOY_VERIFICATION_TOKEN }}
+        run: |
+          if [ -z "$DEPLOY_VERIFICATION_TOKEN" ]; then
+            echo "::error::Missing deployment secret"
+            exit 1
+          fi
+
+          echo "Deployment secret is configured successfully"
+
       - name: Build for GitHub Pages
         run: yarn build
         env:
