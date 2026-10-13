@@ -6,3 +6,8 @@ coverage/
 !.env.example
 *.tsbuildinfo
 .DS_Store
+node_modules/
+.yarn/cache/
+.yarn/install-state.gz
+.pnp.*
+dist/
