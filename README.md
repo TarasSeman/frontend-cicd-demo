@@ -1,79 +1,213 @@
 # Frontend CI/CD Demo
 
-A small React + TypeScript dashboard showing how to build and optimize frontend CI/CD with GitHub Actions, and manage configuration with GitHub Environments.
+A React + TypeScript application demonstrating how to build a CI/CD pipeline using GitHub Actions, automate quality checks, manage environment variables and secrets, and deploy to GitHub Pages.
 
-## Features
-- React 19, TypeScript, Vite
-- ESLint, TypeScript checking, Vitest + Testing Library
-- CI: parallel lint, test/typecheck, build jobs; npm dependency cache; cancellation of obsolete CI runs
-- CD: validate -> build once -> upload artifact -> deploy artifact to GitHub Pages
-- Environment variables scoped to `production`, GitHub Pages deployment via short-lived OIDC token (no personal access token required)
+**Live Demo:** https://tarasseman.github.io/frontend-cicd-demo/
 
-## Run locally
-Requires Node.js 22+ and npm. **Before your first push, run `npm install` and commit the generated `package-lock.json`**. The GitHub Actions workflows use `npm ci` and npm caching, which require that lockfile.
+## Tech Stack
 
-```bash
-npm install # first run generates package-lock.json; commit it to GitHub
-cp .env.example .env
-npm run dev
-npm run lint
-npm run typecheck
-npm test
-npm run build
+- React
+- TypeScript
+- Vite
+- Yarn 4
+- ESLint
+- Vitest
+- GitHub Actions
+- GitHub Pages
+
+## CI/CD Pipeline
+
+The project uses two GitHub Actions workflows:
+
+### 1. Continuous Integration (`ci.yml`)
+
+The CI workflow validates code changes using automated checks:
+
+- Install dependencies with Yarn
+- Run ESLint
+- Run TypeScript type checking
+- Run unit tests
+- Verify the production build
+
+The goal is to catch problems before changes are merged into the main branch.
+
+### 2. Continuous Deployment (`deploy.yml`)
+
+The deployment workflow runs when changes are pushed or merged into `main`. It can also be triggered manually.
+
+**Deployment process:**
+
+1. Checkout repository
+2. Set up Node.js and Yarn
+3. Install dependencies
+4. Run linting, type checking, and tests
+5. Validate the configured GitHub Secret
+6. Build the application with production environment variables
+7. Upload the build artifacts
+8. Deploy to GitHub Pages
+
+**Pipeline overview:**
+
+```text
+Feature Branch
+      |
+      v
+Pull Request
+      |
+      v
+GitHub Actions CI
+      |
+      +-- Lint
+      +-- Typecheck
+      +-- Unit Tests
+      |
+      v
+Merge into main
+      |
+      v
+GitHub Actions Deploy
+      |
+      +-- Validate
+      +-- Verify Secret
+      +-- Build
+      +-- Upload Artifacts
+      |
+      v
+GitHub Pages
 ```
 
-## Publish to GitHub
-1. Create a **public** GitHub repository called `frontend-cicd-demo` (or another name).
-2. In this folder run:
+## Environment Variables
 
-```bash
-git init
-git branch -M main
-git add .
-git commit -m "feat: initial frontend CI/CD demo"
-git remote add origin https://github.com/YOUR_USERNAME/frontend-cicd-demo.git
-git push -u origin main
+Production configuration is managed through GitHub Environments.
+
+**Environment:** `production`
+
+| Variable | Description |
+|---|---|
+| `VITE_APP_ENV` | Application environment |
+| `VITE_API_URL` | Public API endpoint configuration |
+| `VITE_APP_VERSION` | Git commit SHA provided during deployment |
+| `GITHUB_PAGES_BASE` | Base path used for GitHub Pages |
+
+The deployment workflow injects these values during the Vite build:
+
+```yaml
+- name: Build for GitHub Pages
+  run: yarn build
+  env:
+    GITHUB_PAGES_BASE: /${{ github.event.repository.name }}/
+    VITE_APP_ENV: ${{ vars.VITE_APP_ENV }}
+    VITE_API_URL: ${{ vars.VITE_API_URL }}
+    VITE_APP_VERSION: ${{ github.sha }}
 ```
 
-3. Go to **Settings -> Pages -> Build and deployment -> Source** and select **GitHub Actions**.
-4. Go to **Settings -> Environments -> New environment** and create `production`.
-5. Under `production` -> **Environment variables**, add:
-   - `VITE_APP_ENV` = `production`
-   - `VITE_API_URL` = `https://example.com/api` (placeholder only; no API is called)
-6. Optionally create a `staging` environment with `VITE_APP_ENV=staging` and a different public API URL. The demo deploys only production; staging is a configuration example, not a second live deployment.
-7. Push another commit or run **Actions -> Deploy GitHub Pages -> Run workflow**.
-8. Wait for the deploy job. The URL will be `https://YOUR_USERNAME.github.io/REPOSITORY_NAME/`.
+The React application accesses public configuration through `import.meta.env`.
 
-> If you rename the repo, the workflow automatically sets the correct Vite base path for GitHub Pages project sites.
+```ts
+const environment = import.meta.env.VITE_APP_ENV;
+const apiUrl = import.meta.env.VITE_API_URL;
+const version = import.meta.env.VITE_APP_VERSION;
+```
 
-## Secrets vs variables
-- **Environment variables**: `VITE_APP_ENV` and `VITE_API_URL` are public build-time configuration.
-- **Secrets**: for a real private deployment credential, add it under `Settings -> Environments -> production -> Environment secrets` and reference it in a deployment step with `${{ secrets.MY_DEPLOY_TOKEN }}`. Never prefix private secrets with `VITE_` or embed them in a frontend bundle. This GitHub Pages workflow needs **no custom secret**: GitHub provides an ephemeral OIDC token for deployment.
-- The workflow uses `${{ github.sha }}` as public version metadata.
-- Environment variables are read during the `build` job; changing them requires a new build/deploy.
-- Avoid printing secret values in logs, and don't use secrets for untrusted pull request code.
+Vite injects these values at build time. Updating an environment variable requires rebuilding and redeploying the application.
 
-## Verify CI/CD
-1. Create a branch and open a PR into `main`.
-2. Check the `CI` workflow: `lint`, `test`, and `build` jobs run independently.
-3. Intentionally break a test on a branch and verify the PR check fails. Restore it.
-4. Merge the PR. `Deploy GitHub Pages` validates the source, builds, and deploys the built artifact.
-5. Open the published site and confirm the environment is `production` and the version matches the latest commit SHA.
-6. Change the `production` environment variable and rerun the deploy workflow to confirm the change appears.
+**Security:** Variables prefixed with `VITE_` can be included in the browser JavaScript bundle and must never contain sensitive information.
 
-## Optional branch protection
-In **Settings -> Rules -> Rulesets**, create a branch ruleset targeting `main`, require PRs and the CI checks. Availability of enforcement depends on repository visibility and GitHub plan.
+## GitHub Secrets
 
-## CI optimization details
-- `setup-node` uses `cache: npm`, keyed by the lockfile.
-- Independent checks run in parallel for quicker feedback.
-- `concurrency` cancels superseded CI runs on the same branch.
-- CD builds the site **once** and passes `dist/` as an artifact to the deploy job (no duplicate build in deploy).
-- Jobs use least-privilege permissions; only the deploy job receives `pages: write` and `id-token: write`.
+The project uses a GitHub Environment secret:
 
-## Security note
-GitHub Actions third-party actions are version-tagged for readability in this demo. For stricter supply-chain security, pin them to audited full commit SHAs and keep them updated using Dependabot.
+`DEPLOY_VERIFICATION_TOKEN`
 
-## Learning goals
-1. Build and optimize a frontend CI/CD pipeline using GitHub Actions.
-2. Implement secrets and environment variables management in a frontend CI/CD pipeline using GitHub Actions.
+This secret demonstrates how sensitive values can be made available securely to GitHub Actions without hardcoding them in the repository.
+
+```yaml
+- name: Verify deployment secret
+  env:
+    DEPLOY_VERIFICATION_TOKEN: ${{ secrets.DEPLOY_VERIFICATION_TOKEN }}
+  run: |
+    if [ -z "$DEPLOY_VERIFICATION_TOKEN" ]; then
+      echo "::error::Missing deployment secret"
+      exit 1
+    fi
+    echo "Deployment secret is configured successfully"
+```
+
+The secret is only used during the workflow and is not exposed to the frontend application.
+
+This is an educational validation step. GitHub Pages deployment itself uses GitHub Actions permissions and OIDC authentication, not this custom token.
+
+## Deployment Version Tracking
+
+Each production build receives the Git commit SHA through `VITE_APP_VERSION`.
+
+This makes it possible to identify which commit produced the currently deployed application.
+
+For example:
+
+```text
+Environment: production
+App Version: 65338844c176
+API Endpoint: https://example.com/api
+```
+
+The API endpoint above is a demonstration value, not a functional backend.
+
+## Run Locally
+
+### Prerequisites
+
+- Node.js 24
+- Corepack
+- Yarn 4
+
+### Installation
+
+```bash
+git clone https://github.com/TarasSeman/frontend-cicd-demo.git
+cd frontend-cicd-demo
+
+corepack enable
+yarn install
+```
+
+### Start Development Server
+
+```bash
+yarn dev
+```
+
+### Run Quality Checks
+
+```bash
+yarn lint
+yarn typecheck
+yarn test
+yarn build
+```
+
+## GitHub Pages Deployment
+
+The application is automatically deployed when changes are merged into `main`.
+
+Deployment URL:
+
+https://tarasseman.github.io/frontend-cicd-demo/
+
+GitHub Pages is configured to use **GitHub Actions** as the deployment source.
+
+## Project Goals
+
+This project was created to gain practical experience with:
+
+- Configuring CI/CD pipelines using GitHub Actions
+- Automating frontend code quality checks
+- Building and deploying a React application
+- Managing GitHub Environment variables
+- Handling secrets securely in CI workflows
+- Tracking deployed application versions using Git commit SHAs
+- Working with build artifacts and GitHub Pages
+
+## Author
+
+[Taras Seman](https://github.com/TarasSeman)
