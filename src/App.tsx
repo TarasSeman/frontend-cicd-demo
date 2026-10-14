@@ -10,6 +10,7 @@ const checks = [
 ];
 
 export default function App() {
+  const a = 1;
   return (
     <main className="container">
       <header className="header"><div className="logo">⚡</div><span>FRONTEND T / CI-CD DEMO</span><span className="pill">GitHub Actions</span></header>
